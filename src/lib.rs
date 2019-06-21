@@ -4,10 +4,12 @@
 extern crate eng_wasm;
 extern crate eng_wasm_derive;
 extern crate serde;
+extern crate std;
 
 use eng_wasm::*;
 use eng_wasm_derive::pub_interface;
 use serde::{Serialize, Deserialize};
+use std::cmp::PartialEq;
 
 // Encrypted state keys
 static ELECTION: &str = "election";
@@ -29,6 +31,9 @@ impl Election {
     }
 
     fn add_candidate(&mut self, symbol: String) -> Result<(), ()>{
+        if !self.statusEquals(Status::Preparation) {
+            return Err(());
+        }
         match self.get_candidate(&symbol) {
             Some(_) => {
                 Err(())
@@ -40,11 +45,27 @@ impl Election {
         }
     }
 
-    fn vote_to_candidate(&mut self, symbol: String){
-        match self.get_candidate(&symbol) {
-            Some(c) => c.obtain_vote(),
-            None => {},
+    fn start_voting(&mut self) -> Result<(), ()> {
+        if !self.statusEquals(Status::Preparation) {
+            return Err(());
+        }
+        self.changeStatus(Status::Progress);
+        Ok(())
+    }
+
+    fn vote_to_candidate(&mut self, symbol: String) -> Result<(), ()> {
+        match self.status {
+            Status::Preparation => self.changeStatus(Status::Progress),
+            Status::Progress => {},
+            Status::End => {return Err(());}
         };
+        match self.get_candidate(&symbol) {
+            Some(c) => {
+                c.obtain_vote();
+                Ok(())
+            },
+            None => Err(()),
+        }
     }
 
     fn get_candidate(&mut self, symbol: &String) -> Option<&mut Candidate> {
@@ -56,13 +77,26 @@ impl Election {
         None
     }
 
-    fn compute_winner(&self) -> String {
-        match self.candidates.iter().max_by_key(|m| m.obtain) {
+    fn compute_winner(&mut self) -> Result<String, ()> {
+        if !self.statusEquals(Status::Progress) {
+            return Err(());
+        }
+        self.changeStatus(Status::End);
+        Ok(match self.candidates.iter().max_by_key(|m| m.obtain) {
             Some(candidate) => candidate.symbol.clone(),
             None => String::from("")
-        }
+        })
+    }
+
+    fn statusEquals(&self, status: Status) -> bool {
+        self.status == status
+    }
+
+    fn changeStatus(&mut self, status: Status) {
+        self.status = status
     }
 }
+
 #[test]
 fn add_candidate() {
     let mut e = Election::new();
@@ -84,6 +118,8 @@ fn vote_to_candidate() {
         "candidate1");
     assert!(e.candidates[0].obtain ==
         U256::one());
+
+    assert!(e.add_candidate(String::from("after started voting")) == Err(()));
 }
 
 #[test]
@@ -93,10 +129,12 @@ fn compute_winner() {
     e.add_candidate(String::from("candidate2"));
     e.vote_to_candidate(String::from("candidate1"));
     assert!(e.candidates.len() == 2);
-    assert!(e.compute_winner() == "candidate1");
+    assert!(e.compute_winner().unwrap() == "candidate1");
+    assert!(e.add_candidate(String::from("after computed winner")) == Err(()));
+    assert!(e.vote_to_candidate(String::from("candidate1")) == Err(()));
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq)]
 pub enum Status {
     Preparation,
     Progress,
@@ -177,6 +215,6 @@ impl ContractInterface for Contract {
     }
 #[no_mangle]
     fn compute_winner() -> String {
-        Self::get_election().compute_winner()
+        Self::get_election().compute_winner().unwrap()
     }
 }
