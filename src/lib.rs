@@ -21,31 +21,30 @@ pub struct Election {
 }
 
 impl Election {
+    fn new() -> Election {
+        Election {
+            candidates: Vec::new(),
+            status:Status::Preparation,
+        }
+    }
+
     fn add_candidate(&mut self, symbol: String) -> Result<(), ()>{
         match self.get_candidate(&symbol) {
             Some(_) => {
                 Err(())
             },
             None => {
-                self.candidates.push(Candidate{
-                    symbol: symbol,
-                    obtain: U256::zero(),
-                });
+                self.candidates.push(Candidate::new(symbol));
                 Ok(())
             },
         }
     }
 
-    fn vote_to_candidate(&mut self, symbol: String) -> Result<(), ()>{
+    fn vote_to_candidate(&mut self, symbol: String){
         match self.get_candidate(&symbol) {
-            Some(c) => {
-                c.obtain_vote();
-                Ok(())
-            },
-            None => {
-                Err(())
-            },
-        }
+            Some(c) => c.obtain_vote(),
+            None => {},
+        };
     }
 
     fn get_candidate(&mut self, symbol: &String) -> Option<&mut Candidate> {
@@ -57,14 +56,44 @@ impl Election {
         None
     }
 
-    fn compute_winner(self) -> String {
+    fn compute_winner(&self) -> String {
         match self.candidates.iter().max_by_key(|m| m.obtain) {
-            Some(candidate) => {
-                candidate.symbol.clone()
-            },
+            Some(candidate) => candidate.symbol.clone(),
             None => String::from("")
         }
     }
+}
+#[test]
+fn add_candidate() {
+    let mut e = Election::new();
+    e.add_candidate(String::from("candidate1"));
+    assert!(e.candidates.len() == 1);
+    assert!(e.candidates[0].symbol ==
+        "candidate1");
+    assert!(e.candidates[0].obtain ==
+        U256::zero());
+}
+
+#[test]
+fn vote_to_candidate() {
+    let mut e = Election::new();
+    e.add_candidate(String::from("candidate1"));
+    e.vote_to_candidate(String::from("candidate1"));
+    assert!(e.candidates.len() == 1);
+    assert!(e.candidates[0].symbol ==
+        "candidate1");
+    assert!(e.candidates[0].obtain ==
+        U256::one());
+}
+
+#[test]
+fn compute_winner() {
+    let mut e = Election::new();
+    e.add_candidate(String::from("candidate1"));
+    e.add_candidate(String::from("candidate2"));
+    e.vote_to_candidate(String::from("candidate1"));
+    assert!(e.candidates.len() == 2);
+    assert!(e.compute_winner() == "candidate1");
 }
 
 #[derive(Serialize, Deserialize)]
@@ -81,10 +110,26 @@ pub struct Candidate {
 }
 
 impl Candidate {
+    fn new(symbol: String) -> Candidate {
+        Candidate{
+            symbol: symbol,
+            obtain: U256::zero(),
+        }
+    }
     fn obtain_vote(&mut self) {
         self.obtain += U256::one();
     }
 }
+
+#[test]
+    fn obtain_vote_increase_num() {
+        let mut c = Candidate {
+            symbol: String::from("test"),
+            obtain: U256::zero(),
+        };
+        c.obtain_vote();
+        assert!(c.obtain == U256::one())
+    }
 
 #[derive(Serialize, Deserialize)]
 pub struct Voter {
@@ -95,10 +140,7 @@ pub struct Contract;
 
 impl Contract {
     fn get_election() -> Election{
-        read_state!(ELECTION).unwrap_or( Election {
-            candidates: Vec::new(),
-            status:Status::Preparation,
-            })
+        read_state!(ELECTION).unwrap_or(Election::new())
     }
 }
 
@@ -131,6 +173,7 @@ impl ContractInterface for Contract {
     fn vote(symbol: String) {
         let mut election = Self::get_election();
         election.vote_to_candidate(symbol);
+        write_state!(ELECTION => election);
     }
 #[no_mangle]
     fn compute_winner() -> String {
