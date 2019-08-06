@@ -30,7 +30,7 @@ impl Election {
         }
     }
 
-    fn add_candidate(&mut self, symbol: String) -> Result<(), ()>{
+    fn add_candidate(&mut self, symbol: String) -> Result<(), ()> {
         if !self.statusEquals(Status::Preparation) {
             return Err(());
         }
@@ -54,11 +54,9 @@ impl Election {
     }
 
     fn vote_to_candidate(&mut self, symbol: String) -> Result<(), ()> {
-        match self.status {
-            Status::Preparation => self.changeStatus(Status::Progress),
-            Status::Progress => {},
-            Status::End => {return Err(());}
-        };
+        if !self.statusEquals(Status::Progress) {
+            return Err(());
+        }
         match self.get_candidate(&symbol) {
             Some(c) => {
                 c.obtain_vote();
@@ -112,6 +110,7 @@ fn add_candidate() {
 fn vote_to_candidate() {
     let mut e = Election::new();
     e.add_candidate(String::from("candidate1"));
+    e.start_voting();
     e.vote_to_candidate(String::from("candidate1"));
     assert!(e.candidates.len() == 1);
     assert!(e.candidates[0].symbol ==
@@ -127,6 +126,8 @@ fn compute_winner() {
     let mut e = Election::new();
     e.add_candidate(String::from("candidate1"));
     e.add_candidate(String::from("candidate2"));
+    assert!(e.vote_to_candidate(String::from("candidate1")) == Err(()));
+    e.start_voting();
     e.vote_to_candidate(String::from("candidate1"));
     assert!(e.candidates.len() == 2);
     assert!(e.compute_winner().unwrap() == "candidate1");
